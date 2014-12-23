@@ -15,6 +15,36 @@
  */
 
 #include "htc.h"
+#include "hw.h"
+
+typedef u32 (*GetTimeFunc)(struct ath_hw *ah);
+typedef void (*SetTimeFunc)(struct ath_hw *ah, u32 us);
+
+struct time_func {
+	const char *name;
+	GetTimeFunc getter;
+	SetTimeFunc setter;
+	const char *comments;
+};
+
+struct time_func_context {
+	struct time_func *timefunc;
+	struct ath9k_htc_priv *htcpriv;
+};
+
+struct time_func timefunctions[] = 
+{
+	{"time_sifs",		ath9k_hw_get_sifs_time,		ath9k_hw_set_sifs_time,
+		"SIFS time in microseconds (us) = Rx/Tx time = required time to wait after Rx."},
+	{"time_slottime",	ath9k_hw_getslottime,		ath9k_hw_setslottime,
+		"Slot time (aSlotTime) in microseconds (us) = slot time as used in backoff algo."},
+	{"time_ack_timeout",	ath9k_hw_get_ack_timeout,	ath9k_hw_set_ack_timeout,
+		"ACK timeout in microseconds (us)"},
+	{"time_cts_timeout",	ath9k_hw_get_cts_timeout,	ath9k_hw_set_cts_timeout,
+		"CTS timeout in microseconds (us)"},
+	{"time_eifs",		ath9k_hw_get_eifs_timeout,	ath9k_hw_set_eifs_timeout,
+		"EIFS time in microseconds (us)"}
+};
 
 static ssize_t read_file_tgt_int_stats(struct file *file, char __user *user_buf,
 				       size_t count, loff_t *ppos)
@@ -409,6 +439,59 @@ static const struct file_operations fops_debug = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct time_func_context *context = file->private_data;
+	struct time_func *timefunc = context->timefunc;
+	struct ath9k_htc_priv *priv = context->htcpriv;
+	char buf[512];
+	unsigned int len, val;
+
+	// FIXME: Is the wakeup/restore call needed?
+	ath9k_htc_ps_wakeup(priv);
+	val = timefunc->getter(priv->ah);
+	ath9k_htc_ps_restore(priv);
+
+	len = snprintf(buf, sizeof(buf), "%s: %s\nValue: 0x%08X = %d\n",
+		timefunc->name, timefunc->comments, val, val);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_timefunc(struct file *file, const char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	struct time_func_context *context = file->private_data;
+	struct time_func *timefunc = context->timefunc;
+	struct ath9k_htc_priv *priv = context->htcpriv;
+	unsigned long val;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EINVAL;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	// FIXME: Is the wakeup/restore call needed?
+	ath9k_htc_ps_wakeup(priv);
+	timefunc->setter(priv->ah, (u32)val);
+	ath9k_htc_ps_restore(priv);
+
+	return count;
+}
+
+static const struct file_operations fops_timefunc = {
+	.read = read_file_timefunc,
+	.write = write_file_timefunc,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 /* Ethtool support for get-stats */
 #define AMKSTR(nm) #nm "_BE", #nm "_BK", #nm "_VI", #nm "_VO"
 static const char ath9k_htc_gstrings_stats[][ETH_GSTRING_LEN] = {
@@ -495,6 +578,7 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath9k_htc_priv *priv = (struct ath9k_htc_priv *) common->priv;
+	int i;
 
 	priv->debug.debugfs_phy = debugfs_create_dir(KBUILD_MODNAME,
 					     priv->hw->wiphy->debugfsdir);
@@ -525,5 +609,19 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);
 	ath9k_cmn_debug_modal_eeprom(priv->debug.debugfs_phy, priv->ah);
 
+	for (i = 0; i < sizeof(timefunctions) / sizeof(timefunctions[0]); ++i)
+	{
+		// Allocate a context
+		struct time_func_context *context;
+		context = devm_kzalloc(priv->dev, sizeof(struct time_func_context), GFP_KERNEL);
+		if (!context) return -ENOMEM;
+
+		context->timefunc = &timefunctions[i];
+		context->htcpriv = priv;
+
+		// Read/write access using general functions
+		debugfs_create_file(context->timefunc->name, S_IRUSR|S_IWUSR,
+			priv->debug.debugfs_phy, context, &fops_timefunc);
+	}
 	return 0;
 }
