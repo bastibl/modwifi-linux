@@ -439,6 +439,53 @@ static const struct file_operations fops_debug = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_dmesg(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	struct wmi_debugmsg_cmd cmd;
+	struct wmi_debugmsg_resp cmd_rsp;
+	/** ppos is the amount of data already read (maintained by caller) */
+	int offset = *ppos;
+	int ret;
+
+	/** Note: don't need to wake the WiFi MAC chip to get debug messages! */
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.offset = cpu_to_be16(offset);
+
+	memset(&cmd_rsp, 0, sizeof(cmd_rsp));
+	ret = ath9k_wmi_cmd(priv->wmi, WMI_DEBUGMSG_CMDID,
+			    (u8*)&cmd, sizeof(cmd),
+			    (u8*)&cmd_rsp, sizeof(cmd_rsp),
+			    HZ*2);
+	if (ret) {
+		printk("ath9k_htc %s: Something went wrong reading firmware dmesg (ret: %d, len: %d)\n",
+			__FUNCTION__, ret, cmd_rsp.length);
+		return -EIO;
+	}
+
+	// Don't overflow user_buf
+	if (count < cmd_rsp.length)
+		cmd_rsp.length = count;
+
+	// Length of zero signifies EOF
+	if (cmd_rsp.length != 0) {
+		// Returns number of bytes that could not be copied
+		if (copy_to_user(user_buf, cmd_rsp.buffer, cmd_rsp.length) != 0)
+			return -EFAULT;
+	}
+
+	*ppos += cmd_rsp.length;
+	return cmd_rsp.length; 
+}
+
+static const struct file_operations fops_dmesg = {
+	.read = read_file_dmesg,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
 				  size_t count, loff_t *ppos)
 {
@@ -605,6 +652,9 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_queue);
 	debugfs_create_file("debug", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
 			    priv, &fops_debug);
+	debugfs_create_file("dmesg", S_IRUSR, priv->debug.debugfs_phy,
+			    priv, &fops_dmesg);
+
 
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);
 	ath9k_cmn_debug_modal_eeprom(priv->debug.debugfs_phy, priv->ah);
