@@ -83,6 +83,8 @@ static const char *wmi_cmd_to_name(enum wmi_cmd_id wmi_cmd)
 		return "WMI_BITRATE_MASK_CMDID";
 	case WMI_DEBUGMSG_CMDID:
 		return "WMI_DEBUGMSG_CMDID";
+	case WMI_REACTIVEJAM_CMDID:
+		return "WMI_REACTIVEJAM_CMDID";
 	}
 
 	return "Bogus";

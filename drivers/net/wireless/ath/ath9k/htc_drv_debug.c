@@ -486,6 +486,80 @@ static const struct file_operations fops_dmesg = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_reactivejam(struct file *file, char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	char output[] = "Jam beacons and probe responses by writing the bssid and"
+			"duration (in msecs) to this file as 'XX:XX:XX:XX:XX:XX,10000'.\n"
+			"Duration of 0 means an infinite jam (device becomes unresponsive).\n";
+	return simple_read_from_buffer(user_buf, count, ppos, output, sizeof(output));
+}
+
+static ssize_t write_file_reactivejam(struct file *file, const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	struct wmi_reactivejam_cmd cmd;
+	char buf[32] = {0}, reply[128] = {0};
+	unsigned int intmac[6];
+	unsigned int duration;
+	int rval, len, i;
+
+	if (*ppos != 0) return 0;
+
+	// copy over input
+	len = min(count, sizeof(buf) - 1);
+	if (unlikely(copy_from_user(buf, user_buf, len))) {
+		printk("ath9k_htc %s: copy_from_user failed\n", __FUNCTION__);
+		return -EFAULT;
+	}
+	buf[sizeof(buf) - 1] = 0;
+
+	// parse input
+	if ( 7 != sscanf(buf, "%x:%x:%x:%x:%x:%x,%u", &intmac[0], &intmac[1], &intmac[2],
+		&intmac[3], &intmac[4], &intmac[5], &duration) ) {
+		printk("ath9k_htc %s: invalid format\n", __FUNCTION__);
+		return -EINVAL;
+	}
+
+	// save input to command
+	for (i = 0; i < 6; ++i)
+		cmd.bssid[i] = intmac[i];
+	cmd.mduration = cpu_to_be32(duration);
+
+	printk("ath9k_htc: Reactively jamming %x:%x:%x:%x:%x:%x ", cmd.bssid[0], cmd.bssid[1],
+		cmd.bssid[2], cmd.bssid[3], cmd.bssid[4], cmd.bssid[5]);
+	if (cmd.mduration == 0)
+		printk("indefinitely (device will be unresponsive)\n");
+	else
+		printk("for %u miliseconds\n", duration);
+
+	// Blocking call! Wait for duration + 4 seconds. Response is an ASCII string. If the duration
+	// is zero, firmware instantly replies, but will then become unresponsive (infinite jam).
+	ath9k_htc_ps_wakeup(priv);	
+	rval = ath9k_wmi_cmd(priv->wmi, WMI_REACTIVEJAM_CMDID,
+			(u8*)&cmd, sizeof(cmd),
+			(u8*)reply, sizeof(reply),
+			HZ * (duration / 1000 + 4));
+	ath9k_htc_ps_restore(priv);
+
+	if (unlikely(rval) && cmd.mduration != 0) {
+		printk("ath9k_htc %s: WMI_REACTIVEJAM_CMD failed with %d\n", __FUNCTION__, rval);
+		return -EBUSY;
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_reactivejam = {
+	.read = read_file_reactivejam,
+	.write = write_file_reactivejam,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+
 static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
 				  size_t count, loff_t *ppos)
 {
@@ -654,7 +728,8 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_debug);
 	debugfs_create_file("dmesg", S_IRUSR, priv->debug.debugfs_phy,
 			    priv, &fops_dmesg);
-
+	debugfs_create_file("reactivejam", S_IRUSR, priv->debug.debugfs_phy,
+			    priv, &fops_reactivejam);
 
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);
 	ath9k_cmn_debug_modal_eeprom(priv->debug.debugfs_phy, priv->ah);

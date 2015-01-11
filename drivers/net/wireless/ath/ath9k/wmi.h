@@ -115,6 +115,7 @@ enum wmi_cmd_id {
 
 	/* Custom commands added */
 	WMI_DEBUGMSG_CMDID = 0x0080,
+	WMI_REACTIVEJAM_CMDID,
 };
 
 enum wmi_event_id {
@@ -149,6 +150,11 @@ struct wmi_debugmsg_resp {
 	u8 length;
 	/** Debug message(s) **/
 	u8 buffer[40];
+} __packed;
+
+struct wmi_reactivejam_cmd {
+	u8 bssid[6];
+	u32 mduration;
 } __packed;
 
 struct wmi {
