@@ -76,6 +76,18 @@ static int ath9k_htc_wait_for_target(struct ath9k_htc_priv *priv)
 
 static void ath9k_deinit_priv(struct ath9k_htc_priv *priv)
 {
+	if (priv->debug.debugfs_phy_regs)
+		debugfs_remove(priv->debug.debugfs_phy_regs);
+	priv->debug.debugfs_phy_regs = NULL;
+
+	if (priv->debug.debugfs_phy)
+		debugfs_remove(priv->debug.debugfs_phy);
+	priv->debug.debugfs_phy = NULL;
+
+	if (priv->hw->wiphy->debugfsdir)
+		debugfs_remove(priv->hw->wiphy->debugfsdir);
+	priv->hw->wiphy->debugfsdir = NULL;
+
 	ath9k_hw_deinit(priv->ah);
 	kfree(priv->ah);
 	priv->ah = NULL;
