@@ -559,6 +559,61 @@ static const struct file_operations fops_reactivejam = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_macaddr(struct file *file, char __user *user_buf,
+				 size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	char buf[512];
+	unsigned int len;
+	unsigned int low, upper;
+
+	ath9k_htc_ps_wakeup(priv);
+	low = REG_READ(priv->ah, AR_STA_ID0);
+	upper = REG_READ(priv->ah, AR_STA_ID1) & AR_STA_ID1_SADH_MASK;
+	ath9k_htc_ps_restore(priv);
+
+	len = snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X\n",
+			low & 0xFF, (low >> 8) & 0xFF, (low >> 16) & 0xFF,
+			(low >> 24) & 0xFF, upper & 0xFF, (upper >> 8) & 0xFF);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_macaddr(struct file *file, const char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	char buf[32];
+	unsigned int mac[6];
+	unsigned int low, upper;
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[sizeof(buf) - 1] = 0;
+
+	if ( 6 != sscanf(buf, "%x:%x:%x:%x:%x:%x", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]) )
+		return -EINVAL;
+
+	low = mac[0] | (mac[1] << 8) | (mac[2] << 16) | (mac[3] << 24);
+	upper = mac[4] | (mac[5] << 8);
+
+	ath9k_htc_ps_wakeup(priv);
+	REG_WRITE(priv->ah, AR_STA_ID0, low);
+	REG_WRITE(priv->ah, AR_STA_ID1, upper & AR_STA_ID1_SADH_MASK);
+	ath9k_htc_ps_restore(priv);
+
+	return count;
+}
+
+static const struct file_operations fops_macaddr = {
+	.read = read_file_macaddr,
+	.write = write_file_macaddr,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
 				  size_t count, loff_t *ppos)
@@ -730,6 +785,8 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_dmesg);
 	debugfs_create_file("reactivejam", S_IRUSR, priv->debug.debugfs_phy,
 			    priv, &fops_reactivejam);
+	debugfs_create_file("macaddr", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
+			    priv, &fops_macaddr);
 
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);
 	ath9k_cmn_debug_modal_eeprom(priv->debug.debugfs_phy, priv->ah);
