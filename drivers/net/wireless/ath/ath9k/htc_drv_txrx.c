@@ -211,6 +211,7 @@ int ath_htc_txq_update(struct ath9k_htc_priv *priv, int qnum,
 	return error;
 }
 
+/** Used to handle management and injected frames */
 static void ath9k_htc_tx_mgmt(struct ath9k_htc_priv *priv,
 			      struct ath9k_htc_vif *avp,
 			      struct sk_buff *skb,
@@ -222,6 +223,7 @@ static void ath9k_htc_tx_mgmt(struct ath9k_htc_priv *priv,
 	struct tx_mgmt_hdr mgmt_hdr;
 	struct ath9k_htc_tx_ctl *tx_ctl;
 	u8 *tx_fhdr;
+	u8 flags = 0;
 
 	tx_ctl = HTC_SKB_CB(skb);
 	hdr = (struct ieee80211_hdr *) skb->data;
@@ -238,12 +240,16 @@ static void ath9k_htc_tx_mgmt(struct ath9k_htc_priv *priv,
 		mgmt->u.probe_resp.timestamp = avp->tsfadjust;
 	}
 
+	/* Should firmware assign sequence number */
+	if (tx_info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ)
+		flags |= ATH9K_HTC_TX_ASSIGN_SEQ;
+
 	tx_ctl->type = ATH9K_HTC_MGMT;
 
 	mgmt_hdr.node_idx = sta_idx;
 	mgmt_hdr.vif_idx = vif_idx;
 	mgmt_hdr.tidno = 0;
-	mgmt_hdr.flags = 0;
+	mgmt_hdr.flags = flags;
 	mgmt_hdr.cookie = slot;
 
 	mgmt_hdr.key_type = ath9k_cmn_get_hw_crypto_keytype(skb);
@@ -301,6 +307,10 @@ static void ath9k_htc_tx_data(struct ath9k_htc_priv *priv,
 		qc = ieee80211_get_qos_ctl(hdr);
 		tx_hdr.tidno = qc[0] & IEEE80211_QOS_CTL_TID_MASK;
 	}
+
+	/* Should firmware assign sequence number */
+	if (tx_info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ)
+		flags |= ATH9K_HTC_TX_ASSIGN_SEQ;
 
 	/* Check for RTS protection */
 	if (priv->hw->wiphy->rts_threshold != (u32) -1)
@@ -373,12 +383,11 @@ int ath9k_htc_tx_start(struct ath9k_htc_priv *priv,
 		sta_idx = priv->vif_sta_pos[vif_idx];
 	}
 
-	if (ieee80211_is_data(hdr->frame_control))
-		ath9k_htc_tx_data(priv, vif, skb,
-				  sta_idx, vif_idx, slot, is_cab);
+	/** Treat injected frames as management frames to avoid modifications to them */
+	if (ieee80211_is_data(hdr->frame_control) && !(tx_info->flags & IEEE80211_TX_CTL_INJECTED))
+		ath9k_htc_tx_data(priv, vif, skb, sta_idx, vif_idx, slot, is_cab);
 	else
-		ath9k_htc_tx_mgmt(priv, avp, skb,
-				  sta_idx, vif_idx, slot);
+		ath9k_htc_tx_mgmt(priv, avp, skb, sta_idx, vif_idx, slot);
 
 
 	return htc_send(priv->htc, skb);

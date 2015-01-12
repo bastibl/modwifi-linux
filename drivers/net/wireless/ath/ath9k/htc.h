@@ -66,6 +66,7 @@ enum htc_opmode {
 
 #define ATH9K_HTC_TX_CTSONLY      0x1
 #define ATH9K_HTC_TX_RTSCTS       0x2
+#define ATH9K_HTC_TX_ASSIGN_SEQ   0x10
 
 struct tx_frame_hdr {
 	u8 data_type;
