@@ -614,6 +614,61 @@ static const struct file_operations fops_macaddr = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_bssidmask(struct file *file, char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	char buf[512];
+	unsigned int len;
+	unsigned int low, upper;		
+
+	ath9k_htc_ps_wakeup(priv);
+	low = REG_READ(priv->ah, AR_BSSMSKL);
+	upper = REG_READ(priv->ah, AR_BSSMSKU);
+	ath9k_htc_ps_restore(priv);
+
+	len = snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X\n",
+			low & 0xFF, (low >> 8) & 0xFF, (low >> 16) & 0xFF,
+			(low >> 24) & 0xFF, upper & 0xFF, (upper >> 8) & 0xFF);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_bssidmask(struct file *file, const char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	char buf[32];
+	unsigned int mask[6];
+	unsigned int low, upper;
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[sizeof(buf) - 1] = 0;
+
+	if ( 6 != sscanf(buf, "%x:%x:%x:%x:%x:%x", &mask[0], &mask[1], &mask[2], &mask[3], &mask[4], &mask[5]) )
+		return -EINVAL;
+
+	low = mask[0] | (mask[1] << 8) | (mask[2] << 16) | (mask[3] << 24);
+	upper = mask[4] | (mask[5] << 8);
+
+	ath9k_htc_ps_wakeup(priv);
+	REG_WRITE(priv->ah, AR_BSSMSKL, low);
+	REG_WRITE(priv->ah, AR_BSSMSKU, upper & AR_BSS_ID1_U16);
+	ath9k_htc_ps_restore(priv);
+
+	return count;
+}
+
+static const struct file_operations fops_bssidmask = {
+	.read = read_file_bssidmask,
+	.write = write_file_bssidmask,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
 				  size_t count, loff_t *ppos)
@@ -787,6 +842,8 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_reactivejam);
 	debugfs_create_file("macaddr", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
 			    priv, &fops_macaddr);
+	debugfs_create_file("bssidmask", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
+			    priv, &fops_bssidmask);
 
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);
 	ath9k_cmn_debug_modal_eeprom(priv->debug.debugfs_phy, priv->ah);
