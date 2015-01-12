@@ -67,6 +67,7 @@ enum htc_opmode {
 #define ATH9K_HTC_TX_CTSONLY      0x1
 #define ATH9K_HTC_TX_RTSCTS       0x2
 #define ATH9K_HTC_TX_ASSIGN_SEQ   0x10
+#define ATH9K_HTC_TX_NO_ACK       0x20
 
 struct tx_frame_hdr {
 	u8 data_type;
@@ -501,6 +502,9 @@ struct ath9k_htc_priv {
 	unsigned long ps_usecount;
 	bool ps_enabled;
 	bool ps_idle;
+
+	/** If set, injected packets are never retransmitted (not waiting for ACK) */
+	u8 inject_noack;
 
 #ifdef CONFIG_MAC80211_LEDS
 	enum led_brightness brightness;

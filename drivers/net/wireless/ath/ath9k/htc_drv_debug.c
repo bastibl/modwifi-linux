@@ -669,6 +669,46 @@ static const struct file_operations fops_bssidmask = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_inject_noack(struct file *file, char __user *user_buf,
+				 size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	char buf[64];
+	int len;
+
+	len = snprintf(buf, sizeof(buf), "%d\n", priv->inject_noack);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_inject_noack(struct file *file, const char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	char buf[32];
+	unsigned long val;
+	int len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	priv->inject_noack = val;
+
+	return count;
+}
+
+static const struct file_operations fops_inject_noack = {
+	.read = read_file_inject_noack,
+	.write = write_file_inject_noack,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
 				  size_t count, loff_t *ppos)
@@ -844,6 +884,8 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_macaddr);
 	debugfs_create_file("bssidmask", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
 			    priv, &fops_bssidmask);
+	debugfs_create_file("inject_noack", S_IRUSR | S_IWUSR,
+			    priv->debug.debugfs_phy, priv, &fops_inject_noack);
 
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);
 	ath9k_cmn_debug_modal_eeprom(priv->debug.debugfs_phy, priv->ah);

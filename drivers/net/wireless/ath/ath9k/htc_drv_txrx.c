@@ -243,6 +243,9 @@ static void ath9k_htc_tx_mgmt(struct ath9k_htc_priv *priv,
 	/* Should firmware assign sequence number */
 	if (tx_info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ)
 		flags |= ATH9K_HTC_TX_ASSIGN_SEQ;
+	/* Don't retransmit injected packets if requested so */
+	if (unlikely(priv->inject_noack && (tx_info->flags & IEEE80211_TX_CTL_INJECTED)))
+		flags |= ATH9K_HTC_TX_NO_ACK;
 
 	tx_ctl->type = ATH9K_HTC_MGMT;
 
@@ -311,6 +314,9 @@ static void ath9k_htc_tx_data(struct ath9k_htc_priv *priv,
 	/* Should firmware assign sequence number */
 	if (tx_info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ)
 		flags |= ATH9K_HTC_TX_ASSIGN_SEQ;
+	/* Don't retransmit injected packets if requested so */
+	if (unlikely(priv->inject_noack && (tx_info->flags & IEEE80211_TX_CTL_INJECTED)))
+		flags |= ATH9K_HTC_TX_NO_ACK;
 
 	/* Check for RTS protection */
 	if (priv->hw->wiphy->rts_threshold != (u32) -1)
