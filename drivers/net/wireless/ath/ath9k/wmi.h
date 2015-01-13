@@ -117,6 +117,7 @@ enum wmi_cmd_id {
 	WMI_DEBUGMSG_CMDID = 0x0080,
 	WMI_REACTIVEJAM_CMDID,
 	WMI_FASTREPLY_CMDID,
+	WMI_CONSTANTJAM_CMDID,
 };
 
 enum wmi_event_id {
@@ -157,6 +158,26 @@ struct wmi_reactivejam_cmd {
 	u8 bssid[6];
 	u32 mduration;
 } __packed;
+
+struct wmi_constantjam_cmd {
+	/** A value from CONSTJAM_REQUEST to denote the request */
+	u8 request;
+	/** Set to 1 to disable CS and inter-frame-timeouts */
+	u8 conf_radio;
+	/** Length of the packet which is continuously transmitted */
+	u16 len;
+} __packed;
+
+struct wmi_constantjam_resp {
+	/** Is 1 when jammer is running, 0 otherwise */
+	u8 status;
+} __packed;
+
+enum CONSTJAM_REQUEST {
+	CONSTJAM_START,
+	CONSTJAM_STOP,
+	CONSTJAM_STATUS
+};
 
 struct wmi_fastreply_cmd {
 	u8 type;

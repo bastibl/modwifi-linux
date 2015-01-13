@@ -662,6 +662,92 @@ static const struct file_operations fops_reactivejam = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_constantjam(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	struct wmi_constantjam_resp cmd_rsp;
+	struct wmi_constantjam_cmd cmd;
+	char buf[128];
+	unsigned int len;
+	int rval;
+	
+	if (*ppos != 0) return 0;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.request = CONSTJAM_STATUS;
+
+	// Send command to firmware
+	rval = ath9k_wmi_cmd(priv->wmi, WMI_CONSTANTJAM_CMDID,
+			(u8 *)&cmd, sizeof(cmd),
+			(u8 *)&cmd_rsp, sizeof(cmd_rsp),
+			HZ*2);
+
+	if (unlikely(rval)) {
+		printk(">>>> WMI_CONSTANTJAM_CMD failed: %d\n", rval);
+		return -EIO;
+	}
+
+	len = snprintf(buf, sizeof(buf), "Constant jammer running: %d\n", cmd_rsp.status);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_constantjam(struct file *file, const char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	struct wmi_constantjam_resp cmd_rsp;
+	struct wmi_constantjam_cmd cmd;
+	unsigned long val;
+	char buf[32];
+	ssize_t len;
+	int rval = 0;
+
+	if (*ppos != 0) return 0;
+
+	// parse input
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EINVAL;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	memset(&cmd, 0, sizeof(cmd));
+	// should we start or stop
+	cmd.request = val == 0 ? CONSTJAM_STOP : CONSTJAM_START;
+	// full continuous jamming (disable carrier sense, no timeouts between packets)
+	cmd.conf_radio = 1;
+	// length of packet used for jamming (pick a small one to avoid memory issues)
+	cmd.len = cpu_to_be16(50);
+
+	// Send command to firmware
+	ath9k_htc_ps_wakeup(priv);
+	rval = ath9k_wmi_cmd(priv->wmi, WMI_CONSTANTJAM_CMDID,
+			(u8 *)&cmd, sizeof(cmd),
+			(u8 *)&cmd_rsp, sizeof(cmd_rsp),
+			HZ*2);
+
+	if (unlikely(rval)) {
+		printk(">>>> WMI_CONSTANTJAM_CMD failed: %d\n", rval);
+		return -EIO;
+	}
+
+	if (cmd.request == CONSTJAM_STOP)
+		ath9k_htc_ps_restore(priv);
+
+	return count;
+}
+
+static const struct file_operations fops_constantjam = {
+	.read = read_file_constantjam,
+	.write = write_file_constantjam,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t read_file_macaddr(struct file *file, char __user *user_buf,
 				 size_t count, loff_t *ppos)
 {
@@ -1120,6 +1206,8 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_dmesg);
 	debugfs_create_file("reactivejam", S_IRUSR, priv->debug.debugfs_phy,
 			    priv, &fops_reactivejam);
+	debugfs_create_file("constantjam", S_IRUSR, priv->debug.debugfs_phy,
+			    priv, &fops_constantjam);
 	debugfs_create_file("fastreply_packet", S_IRUSR | S_IWUSR,
 			    priv->debug.debugfs_phy, priv, &fops_fastreply_packet);
 	debugfs_create_file("fastreply_start", S_IRUSR | S_IWUSR,
