@@ -116,6 +116,7 @@ enum wmi_cmd_id {
 	/* Custom commands added */
 	WMI_DEBUGMSG_CMDID = 0x0080,
 	WMI_REACTIVEJAM_CMDID,
+	WMI_FASTREPLY_CMDID,
 };
 
 enum wmi_event_id {
@@ -156,6 +157,29 @@ struct wmi_reactivejam_cmd {
 	u8 bssid[6];
 	u32 mduration;
 } __packed;
+
+struct wmi_fastreply_cmd {
+	u8 type;
+	union {
+		// transmit response packet in multiple commands
+		struct {
+			u8 length;
+			u8 offset;
+			u8 datalen;
+			u8 data[40];
+		} pkt;
+		// command to start monitoring
+		struct {
+			u32 mduration;
+			u8 source[6];
+		} start;
+	};
+} __packed;
+
+enum FASTREPLY_TYPE {
+	FASTREPLY_PKT,
+	FASTREPLY_START
+};
 
 struct wmi {
 	struct ath9k_htc_priv *drv_priv;

@@ -793,6 +793,142 @@ static const struct file_operations fops_inject_noack = {
 	.llseek = default_llseek,
 };
 
+static ssize_t read_file_fastreply_packet(struct file *file, char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	char buf[128] = "Write the reply packet used in fastreply_start to this file.\n";
+	return simple_read_from_buffer(user_buf, count, ppos, buf, sizeof(buf));
+}
+
+static ssize_t write_file_fastreply_packet(struct file *file,
+	const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	struct wmi_fastreply_cmd cmd;
+	uint8_t buff[256];
+	unsigned int offset;
+	int reply, rval;
+
+	if (*ppos != 0) return 0;
+
+	//
+	// 1. copy input
+	//
+
+	if (count > 256) {
+		printk("fastreply_packet: packet is too long (%d)\n", count);
+		return -EMSGSIZE;
+	}
+
+	if (copy_from_user(buff, user_buf, count))
+		return -EFAULT;
+
+	//
+	// 2. send the buffer to the firmware
+	//
+		
+	cmd.type = FASTREPLY_PKT;
+	cmd.pkt.length = count;
+
+	ath9k_htc_ps_wakeup(priv);
+
+	for (offset = 0; offset < count; offset += sizeof(cmd.pkt.data))
+	{
+		cmd.pkt.offset = offset;
+		cmd.pkt.datalen = min(40U, count - offset);
+		memcpy(cmd.pkt.data, &buff[offset], cmd.pkt.datalen);
+
+		rval = ath9k_wmi_cmd(priv->wmi, WMI_FASTREPLY_CMDID,
+				(u8*)&cmd, sizeof(cmd),
+				(u8*)&reply, sizeof(reply),
+				2*HZ);
+
+		if (unlikely(rval)) {
+			printk("ath9k_htc %s: WMI_FASTREPLY_CMDID failed with %d\n", __FUNCTION__, rval);
+			ath9k_htc_ps_restore(priv);
+			return -EIO;
+		}
+	}
+
+	ath9k_htc_ps_restore(priv);
+
+	return count;
+}
+
+
+static const struct file_operations fops_fastreply_packet = {
+	.read = read_file_fastreply_packet,
+	.write = write_file_fastreply_packet,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t read_file_fastreply_start(struct file *file, char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	char buf[128] = "Write the source MAC and duration ( 90:18:7c:6e:6b:20,10000 ) to this file.\n"
+			"Set the reply packet using fastreply_packet.\n";
+	return simple_read_from_buffer(user_buf, count, ppos, buf, sizeof(buf));
+}
+
+static ssize_t write_file_fastreply_start(struct file *file,
+	const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct ath9k_htc_priv *priv = file->private_data;
+	struct wmi_fastreply_cmd cmd;
+	char input[256];
+	int mac[6];
+	unsigned int duration;
+	int len, reply, rval, i;
+
+	if (*ppos != 0) return 0;
+
+	// 1. parse input
+
+	len = min(count, sizeof(input) - 1);
+	if (copy_from_user(input, user_buf, len))
+		return -EFAULT;
+	input[len] = '\0';
+
+	if (sscanf(input, "%x:%x:%x:%x:%x:%x,%u", &mac[0], &mac[1], &mac[2],
+		&mac[3], &mac[4], &mac[5], &duration) != 7) {
+		printk("%s: sscanf parsing failed\n", __FUNCTION__);
+		return -EINVAL;
+	}
+
+	// 2. send the start command
+	
+	cmd.type = FASTREPLY_START;
+	cmd.start.mduration = cpu_to_be32(duration);
+	for (i = 0; i < 6; ++i)
+		cmd.start.source[i] = mac[i];
+
+	ath9k_htc_ps_wakeup(priv);
+	
+	rval = ath9k_wmi_cmd(priv->wmi, WMI_FASTREPLY_CMDID,
+			(u8*)&cmd, sizeof(cmd),
+			(u8*)&reply, sizeof(reply),
+			HZ * (duration / 1000 + 4));
+
+	ath9k_htc_ps_restore(priv);
+
+	if (unlikely(rval)) {
+		printk("ath9k_htc %s: WMI_FASTREPLY_CMDID failed with %d\n", __FUNCTION__, rval);
+		return -EBUSY;
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_fastreply_start = {
+	.read = read_file_fastreply_start,
+	.write = write_file_fastreply_start,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 static ssize_t read_file_timefunc(struct file *file, char __user *user_buf,
 				  size_t count, loff_t *ppos)
@@ -965,6 +1101,10 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 			    priv, &fops_dmesg);
 	debugfs_create_file("reactivejam", S_IRUSR, priv->debug.debugfs_phy,
 			    priv, &fops_reactivejam);
+	debugfs_create_file("fastreply_packet", S_IRUSR | S_IWUSR,
+			    priv->debug.debugfs_phy, priv, &fops_fastreply_packet);
+	debugfs_create_file("fastreply_start", S_IRUSR | S_IWUSR,
+			    priv->debug.debugfs_phy, priv, &fops_fastreply_start);
 	debugfs_create_file("macaddr", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
 			    priv, &fops_macaddr);
 	debugfs_create_file("bssidmask", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
