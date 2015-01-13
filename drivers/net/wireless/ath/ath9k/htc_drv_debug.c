@@ -48,8 +48,27 @@ struct time_func timefunctions[] =
 
 struct reg_ops registers[] = {
 	// Backoff parameters
+	{"ifs_cwmin_queue0",		AR_DLCL_IFS(0),		AR_D_LCL_IFS_CWMIN,
+		"Backoff behaviour (queue 0): CW_MIN is the minimum number of time slots to wait."},
+	{"ifs_cwmax_queue0",		AR_DLCL_IFS(0),		AR_D_LCL_IFS_CWMAX,
+		"Backoff behaviour (queue 0): CW_MAX is the maximum number of time slots to wait."},
+	{"ifs_aifs_queue0",		AR_DLCL_IFS(0),		AR_D_LCL_IFS_AIFS,
+		"AIFS (in number of aSlotTime's) for queue 0."},
+	// Disable backoff
+	{"ifs_ignore_backoff",		AR_D_GBL_IFS_MISC,	AR_D_GBL_IFS_MISC_IGNORE_BACKOFF,
+		"Ignore backoff (perhaps you also want to disable waiting for ACKs - see inject_noack)."},
+	// Virtual and physical carrier sense
+	{"ignore_virt_cs",		AR_DIAG_SW,		AR_DIAG_IGNORE_VIRT_CS,
+		"Disables virtual carrier (cts/rts) sense when set."},
+	{"force_channel_idle",		AR_DIAG_SW,		AR_DIAG_FORCE_CH_IDLE_HIGH,
+		"Disables physical carrier sense (air clear) when set."},
+	{"diag_rx_disable",		AR_DIAG_SW,		AR_DIAG_RX_DIS,
+		"Block incoming frames from being sent to the firmware."},
+	// Other
 	{"diag_corrupt_fcs",		AR_DIAG_SW,		AR_DIAG_CORR_FCS,
 		"If set, every transmitted packet is given an incorrect FCS."},
+	{"cpu_freq_pll",		0x00056000,		-1,
+		"Value = frequency * 4 + 5 (Setting of the Phase Locked Loop)."},
 };
 
 static ssize_t read_file_tgt_int_stats(struct file *file, char __user *user_buf,
