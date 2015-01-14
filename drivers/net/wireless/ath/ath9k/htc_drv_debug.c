@@ -651,6 +651,9 @@ static ssize_t write_file_reactivejam(struct file *file, const char __user *user
 		return -EBUSY;
 	}
 
+	// Reset radio settings
+	ath9k_hw_init_global_settings(priv->ah);
+
 	return count;
 }
 
