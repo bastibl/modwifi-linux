@@ -87,6 +87,8 @@ static const char *wmi_cmd_to_name(enum wmi_cmd_id wmi_cmd)
 		return "WMI_REACTIVEJAM_CMDID";
 	case WMI_FASTREPLY_CMDID:
 		return "WMI_FASTREPLY_CMDID";
+	case WMI_CONSTANTJAM_CMDID:
+		return "WMI_CONSTANTJAM_CMDID";
 	}
 
 	return "Bogus";
