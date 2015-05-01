@@ -66,11 +66,23 @@ static void ath9k_hw_set_clockrate(struct ath_hw *ah)
 	common->clockrate = clockrate;
 }
 
+/** This is the clockrate of the wireless chip (not the chip running the firmware for ath9k_htc) */
 static u32 ath9k_hw_mac_to_clks(struct ath_hw *ah, u32 usecs)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 
 	return usecs * common->clockrate;
+}
+
+/** This is the clockrate of the wireless chip (not the chip running the firmware for ath9k_htc) */
+static u32 ath9k_hw_mac_to_usecs(struct ath_hw *ah, u32 clks)
+{
+	struct ath_common *common = ath9k_hw_common(ah);
+
+	if (common->clockrate == 0)
+		return 0xFFFFFFFF;
+
+	return clks / common->clockrate;
 }
 
 bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout)
@@ -213,6 +225,24 @@ void ath9k_hw_get_channel_centers(struct ath_hw *ah,
 	/* 25 MHz spacing is supported by hw but not on upper layers */
 	centers->ext_center =
 		centers->synth_center + (extoff * HT40_CHANNEL_CENTER_SHIFT);
+}
+
+static void ath9k_restore_registers(struct ath_hw *ah)
+{
+	struct reg_ops_instance *saved_reg = ah->modified_registers;
+	int regval;
+
+	while (saved_reg != NULL)
+	{
+		if (saved_reg->valueset)
+		{
+			regval = REG_READ(ah, saved_reg->regops->address);
+			regval = (regval & ~saved_reg->regops->mask) | saved_reg->value;
+			REG_WRITE(ah, saved_reg->regops->address, regval);
+		}
+
+		saved_reg = saved_reg->next;
+	}
 }
 
 /******************/
@@ -937,33 +967,78 @@ static void ath9k_hw_init_interrupt_masks(struct ath_hw *ah,
 	}
 }
 
-static void ath9k_hw_set_sifs_time(struct ath_hw *ah, u32 us)
+void ath9k_hw_set_sifs_time(struct ath_hw *ah, u32 us)
 {
 	u32 val = ath9k_hw_mac_to_clks(ah, us - 2);
-	val = min(val, (u32) 0xFFFF);
+	val &= AR_D_GBL_IFS_SIFS_M;
 	REG_WRITE(ah, AR_D_GBL_IFS_SIFS, val);
 }
+EXPORT_SYMBOL(ath9k_hw_set_sifs_time);
 
 void ath9k_hw_setslottime(struct ath_hw *ah, u32 us)
 {
 	u32 val = ath9k_hw_mac_to_clks(ah, us);
-	val = min(val, (u32) 0xFFFF);
+	val &= AR_D_GBL_IFS_SLOT_M;
 	REG_WRITE(ah, AR_D_GBL_IFS_SLOT, val);
 }
+EXPORT_SYMBOL(ath9k_hw_setslottime);
 
 void ath9k_hw_set_ack_timeout(struct ath_hw *ah, u32 us)
 {
 	u32 val = ath9k_hw_mac_to_clks(ah, us);
-	val = min(val, (u32) MS(0xFFFFFFFF, AR_TIME_OUT_ACK));
 	REG_RMW_FIELD(ah, AR_TIME_OUT, AR_TIME_OUT_ACK, val);
 }
+EXPORT_SYMBOL(ath9k_hw_set_ack_timeout);
 
 void ath9k_hw_set_cts_timeout(struct ath_hw *ah, u32 us)
 {
 	u32 val = ath9k_hw_mac_to_clks(ah, us);
-	val = min(val, (u32) MS(0xFFFFFFFF, AR_TIME_OUT_CTS));
 	REG_RMW_FIELD(ah, AR_TIME_OUT, AR_TIME_OUT_CTS, val);
 }
+EXPORT_SYMBOL(ath9k_hw_set_cts_timeout);
+
+void ath9k_hw_set_eifs_timeout(struct ath_hw *ah, u32 us)
+{
+	u32 val = ath9k_hw_mac_to_clks(ah, us);
+	val &= AR_D_GBL_IFS_EIFS;
+	REG_WRITE(ah, AR_D_GBL_IFS_EIFS, val);
+}
+EXPORT_SYMBOL(ath9k_hw_set_eifs_timeout);
+
+u32 ath9k_hw_get_sifs_time(struct ath_hw *ah)
+{
+	u32 val = REG_READ(ah, AR_D_GBL_IFS_SIFS) & AR_D_GBL_IFS_SIFS_M;
+	return ath9k_hw_mac_to_usecs(ah, val) + 2;
+}
+EXPORT_SYMBOL(ath9k_hw_get_sifs_time);
+
+u32 ath9k_hw_getslottime(struct ath_hw *ah)
+{
+	u32 val = REG_READ(ah, AR_D_GBL_IFS_SLOT) & AR_D_GBL_IFS_SLOT_M;
+	return ath9k_hw_mac_to_usecs(ah, val);
+}
+EXPORT_SYMBOL(ath9k_hw_getslottime);
+
+u32 ath9k_hw_get_ack_timeout(struct ath_hw *ah)
+{
+	u32 val = MS(REG_READ(ah, AR_TIME_OUT), AR_TIME_OUT_ACK);
+	return ath9k_hw_mac_to_usecs(ah, val);
+}
+EXPORT_SYMBOL(ath9k_hw_get_ack_timeout);
+
+u32 ath9k_hw_get_cts_timeout(struct ath_hw *ah)
+{
+	u32 val = MS(REG_READ(ah, AR_TIME_OUT), AR_TIME_OUT_CTS);
+	return ath9k_hw_mac_to_usecs(ah, val);
+}
+EXPORT_SYMBOL(ath9k_hw_get_cts_timeout);
+
+u32 ath9k_hw_get_eifs_timeout(struct ath_hw *ah)
+{
+	u32 val = REG_READ(ah, AR_D_GBL_IFS_EIFS) & AR_D_GBL_IFS_EIFS_M;
+	return ath9k_hw_mac_to_usecs(ah, val);
+}
+EXPORT_SYMBOL(ath9k_hw_get_eifs_timeout);
 
 static bool ath9k_hw_set_global_txtimeout(struct ath_hw *ah, u32 tu)
 {
@@ -1985,6 +2060,8 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	if (AR_SREV_9565(ah) && common->bt_ant_diversity)
 		REG_SET_BIT(ah, AR_BTCOEX_WL_LNADIV, AR_BTCOEX_WL_LNADIV_FORCE_ON);
 
+	ath9k_restore_registers(ah);
+
 	if (ah->hw->conf.radar_enabled) {
 		/* set HW specific DFS configuration */
 		ah->radar_conf.ext_channel = IS_CHAN_HT40(chan);
@@ -2132,6 +2209,8 @@ static bool ath9k_hw_set_power_awake(struct ath_hw *ah)
 		ar9003_mci_set_power_awake(ah);
 
 	REG_CLR_BIT(ah, AR_STA_ID1, AR_STA_ID1_PWR_SAV);
+
+	ath9k_restore_registers(ah);
 
 	return true;
 }

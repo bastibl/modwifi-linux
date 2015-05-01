@@ -112,6 +112,12 @@ enum wmi_cmd_id {
 	WMI_TX_STATS_CMDID,
 	WMI_RX_STATS_CMDID,
 	WMI_BITRATE_MASK_CMDID,
+
+	/* Custom commands added */
+	WMI_DEBUGMSG_CMDID = 0x0080,
+	WMI_REACTIVEJAM_CMDID,
+	WMI_FASTREPLY_CMDID,
+	WMI_CONSTANTJAM_CMDID,
 };
 
 enum wmi_event_id {
@@ -135,6 +141,65 @@ struct ath9k_htc_tx_event {
 	int count;
 	struct __wmi_event_txstatus txs;
 	struct list_head list;
+};
+
+struct wmi_debugmsg_cmd {
+	__be16 offset;
+} __packed;
+
+struct wmi_debugmsg_resp {
+	/** Length of zero signifies that no more data is available */
+	u8 length;
+	/** Debug message(s) **/
+	u8 buffer[40];
+} __packed;
+
+struct wmi_reactivejam_cmd {
+	u8 bssid[6];
+	u32 mduration;
+} __packed;
+
+struct wmi_constantjam_cmd {
+	/** A value from CONSTJAM_REQUEST to denote the request */
+	u8 request;
+	/** Set to 1 to disable CS and inter-frame-timeouts */
+	u8 conf_radio;
+	/** Length of the packet which is continuously transmitted */
+	u16 len;
+} __packed;
+
+struct wmi_constantjam_resp {
+	/** Is 1 when jammer is running, 0 otherwise */
+	u8 status;
+} __packed;
+
+enum CONSTJAM_REQUEST {
+	CONSTJAM_START,
+	CONSTJAM_STOP,
+	CONSTJAM_STATUS
+};
+
+struct wmi_fastreply_cmd {
+	u8 type;
+	union {
+		// transmit response packet in multiple commands
+		struct {
+			u8 length;
+			u8 offset;
+			u8 datalen;
+			u8 data[40];
+		} pkt;
+		// command to start monitoring
+		struct {
+			u32 mduration;
+			u8 source[6];
+		} start;
+	};
+} __packed;
+
+enum FASTREPLY_TYPE {
+	FASTREPLY_PKT,
+	FASTREPLY_START
 };
 
 struct wmi {

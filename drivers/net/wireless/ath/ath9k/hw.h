@@ -736,6 +736,40 @@ enum ath_cal_list {
 	TX_CL_CAL         =	BIT(2),
 };
 
+/**
+ * reg_ops - describes one specific functionality of a particular register
+ *
+ * @name: name of the register as used in debugfs
+ * @address: memory address of the register
+ * @mask: mask for the specific functionality we are exposing. One single addresses
+ *        may have multiple reg_ops, one for each mask/functionality.
+ * @description: human readable description of the functionality
+ */
+struct reg_ops {
+	const char *name;
+	unsigned int address;
+	unsigned int mask;
+	const char *description;
+};
+
+/**
+ * reg_ops_instance - describes a specific configuration of a reg_ops register
+ *
+ * @regops: the register functionality we are referencing
+ * @valueset: did the user write a custom value to this register?
+ * @value: the value the user wrote to the register
+ * @owner: the interface on which the custom value was set
+ *
+ * @next: pointer to next reg_ops_instance, to create linked lists
+ */
+struct reg_ops_instance {
+	struct reg_ops *regops;
+	char valueset;
+	unsigned int value;
+	struct ath9k_htc_priv *owner;
+	struct reg_ops_instance *next;
+};
+
 /* ah_flags */
 #define AH_USE_EEPROM   0x1
 #define AH_UNPLUGGED    0x2 /* The card has been physically removed. */
@@ -947,6 +981,9 @@ struct ath_hw {
 
 	struct ath_dynack dynack;
 
+	/** Linked list of (possibly) manually overwritten registers */
+	struct reg_ops_instance *modified_registers;
+
 	bool tpc_enabled;
 	u8 tx_power[Ar5416RateSize];
 	u8 tx_power_stbc[Ar5416RateSize];
@@ -1038,6 +1075,18 @@ void ath9k_hw_check_nav(struct ath_hw *ah);
 bool ath9k_hw_check_alive(struct ath_hw *ah);
 
 bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode);
+
+void ath9k_hw_set_sifs_time(struct ath_hw *ah, u32 us);
+void ath9k_hw_setslottime(struct ath_hw *ah, u32 us);
+void ath9k_hw_set_ack_timeout(struct ath_hw *ah, u32 us);
+void ath9k_hw_set_cts_timeout(struct ath_hw *ah, u32 us);
+void ath9k_hw_set_eifs_timeout(struct ath_hw *ah, u32 us);
+
+u32 ath9k_hw_get_sifs_time(struct ath_hw *ah);
+u32 ath9k_hw_getslottime(struct ath_hw *ah);
+u32 ath9k_hw_get_ack_timeout(struct ath_hw *ah);
+u32 ath9k_hw_get_cts_timeout(struct ath_hw *ah);
+u32 ath9k_hw_get_eifs_timeout(struct ath_hw *ah);
 
 /* Generic hw timer primitives */
 struct ath_gen_timer *ath_gen_timer_alloc(struct ath_hw *ah,
