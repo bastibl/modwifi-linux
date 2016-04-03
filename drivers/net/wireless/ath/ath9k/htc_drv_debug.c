@@ -913,7 +913,7 @@ static ssize_t write_file_fastreply_packet(struct file *file,
 	//
 
 	if (count > 256) {
-		printk("fastreply_packet: packet is too long (%d)\n", count);
+		printk("fastreply_packet: packet is too long (%zu)\n", count);
 		return -EMSGSIZE;
 	}
 
@@ -932,7 +932,7 @@ static ssize_t write_file_fastreply_packet(struct file *file,
 	for (offset = 0; offset < count; offset += sizeof(cmd.pkt.data))
 	{
 		cmd.pkt.offset = offset;
-		cmd.pkt.datalen = min(40U, count - offset);
+		cmd.pkt.datalen = min(40U, (unsigned int)(count - offset));
 		memcpy(cmd.pkt.data, &buff[offset], cmd.pkt.datalen);
 
 		rval = ath9k_wmi_cmd(priv->wmi, WMI_FASTREPLY_CMDID,
