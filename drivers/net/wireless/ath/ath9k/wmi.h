@@ -165,6 +165,11 @@ struct wmi_debugmsg_resp {
 struct wmi_reactivejam_cmd {
 	u8 bssid[6];
 	u32 mduration;
+	u32 jam_packet_length;
+	u32 jam_delay_us;
+	u32 jam_rate_index;
+	u32 match_on_position;
+	u8 match_packet_type;
 } __packed;
 
 struct wmi_constantjam_cmd {

@@ -581,8 +581,8 @@ static const struct file_operations fops_dmesg = {
 static ssize_t read_file_reactivejam(struct file *file, char __user *user_buf,
 			     size_t count, loff_t *ppos)
 {
-	char output[] = "Jam beacons and probe responses by writing the bssid and"
-			"duration (in msecs) to this file as 'XX:XX:XX:XX:XX:XX,10000'.\n"
+	char output[] = "Jam packets by writing the bssid,"
+			"duration (in msecs), packet length (byte), delay (us), rate index, match position, and match byte to this file as 'XX:XX:XX:XX:XX:XX,10000,24,0,0,0,0x80'.\n"
 			"Duration of 0 means an infinite jam (device becomes unresponsive).\n";
 	return simple_read_from_buffer(user_buf, count, ppos, output, sizeof(output));
 }
@@ -592,9 +592,14 @@ static ssize_t write_file_reactivejam(struct file *file, const char __user *user
 {
 	struct ath9k_htc_priv *priv = file->private_data;
 	struct wmi_reactivejam_cmd cmd;
-	char buf[32] = {0}, reply[128] = {0};
+	char buf[64] = {0}, reply[128] = {0};
 	unsigned int intmac[6];
 	unsigned int duration;
+	unsigned int jam_packet_length;
+	unsigned int jam_delay_us;
+	unsigned int jam_rate_index;
+	unsigned int match_on_position;
+	unsigned int match_packet_type;
 	int rval, len, i;
 
 	if (*ppos != 0) return 0;
@@ -608,9 +613,10 @@ static ssize_t write_file_reactivejam(struct file *file, const char __user *user
 	buf[sizeof(buf) - 1] = 0;
 
 	// parse input
-	if ( 7 != sscanf(buf, "%x:%x:%x:%x:%x:%x,%u", &intmac[0], &intmac[1], &intmac[2],
-		&intmac[3], &intmac[4], &intmac[5], &duration) ) {
+	if ( 12 != sscanf(buf, "%x:%x:%x:%x:%x:%x,%u,%u,%u,%u,%u,%x", &intmac[0], &intmac[1], &intmac[2],
+		&intmac[3], &intmac[4], &intmac[5], &duration, &jam_packet_length, &jam_delay_us, &jam_rate_index, &match_on_position, &match_packet_type) ) {
 		printk("ath9k_htc %s: invalid format\n", __FUNCTION__);
+		printk("got: %s", buf);
 		return -EINVAL;
 	}
 
@@ -618,9 +624,14 @@ static ssize_t write_file_reactivejam(struct file *file, const char __user *user
 	for (i = 0; i < 6; ++i)
 		cmd.bssid[i] = intmac[i];
 	cmd.mduration = cpu_to_be32(duration);
+	cmd.jam_packet_length = cpu_to_be32(jam_packet_length);
+	cmd.jam_delay_us = cpu_to_be32(jam_delay_us);
+	cmd.jam_rate_index = cpu_to_be32(jam_rate_index);
+	cmd.match_on_position = cpu_to_be32(match_on_position);
+	cmd.match_packet_type = match_packet_type;
 
-	printk("ath9k_htc: Reactively jamming %x:%x:%x:%x:%x:%x ", cmd.bssid[0], cmd.bssid[1],
-		cmd.bssid[2], cmd.bssid[3], cmd.bssid[4], cmd.bssid[5]);
+	printk("ath9k_htc: Reactively jamming %x:%x:%x:%x:%x:%x - %u,%u,%u,%u,%x ", cmd.bssid[0], cmd.bssid[1],
+		cmd.bssid[2], cmd.bssid[3], cmd.bssid[4], cmd.bssid[5], jam_packet_length, jam_delay_us, jam_rate_index, match_on_position, match_packet_type);
 	if (cmd.mduration == 0)
 		printk("indefinitely (device will be unresponsive)\n");
 	else
